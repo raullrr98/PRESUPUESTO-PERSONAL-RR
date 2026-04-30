@@ -280,6 +280,23 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
   .mob-m{display:none!important;}
   #toast{bottom:14px;}
 }
+/* SYNC MODAL */
+.sync-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:400;align-items:center;justify-content:center;padding:20px;}
+.sync-ov.on{display:flex;}
+.sync-box{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:24px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;animation:mu .28s cubic-bezier(.4,0,.2,1);}
+.sync-box h3{font-family:var(--fh);font-size:1rem;font-weight:800;margin-bottom:6px;}
+.sync-desc{font-size:.76rem;color:var(--mu);margin-bottom:18px;line-height:1.5;}
+.sync-step{background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:14px 16px;margin-bottom:12px;}
+.sync-step-title{font-family:var(--fh);font-size:.78rem;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sync-url-box{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:.68rem;color:var(--mu);word-break:break-all;line-height:1.5;max-height:80px;overflow-y:auto;font-family:monospace;margin-bottom:10px;user-select:all;}
+.sync-import-area{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:8px;color:var(--tx);font-family:monospace;font-size:.7rem;padding:9px 11px;resize:vertical;min-height:80px;outline:none;}
+.sync-import-area:focus{border-color:var(--bl);}
+.sync-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;justify-content:flex-end;}
+.sync-status{font-size:.74rem;margin-top:8px;padding:7px 10px;border-radius:7px;display:none;}
+.sync-status.ok{background:var(--grg);color:#4ade80;display:block;}
+.sync-status.err{background:var(--reg);color:#f87171;display:block;}
+/* QR placeholder */
+.qr-wrap{display:flex;align-items:center;justify-content:center;padding:10px 0;}
 </style>
 </head>
 <body>
@@ -359,6 +376,7 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
       <button class="btn bg2" onclick="exPDF()">📄 PDF</button>
       <button class="btn bg2" onclick="exCSV()">📊 CSV</button>
       <button class="btn bg2" onclick="svD()">💾 Guardar</button>
+      <button class="btn bp"  onclick="openSync()" style="gap:6px;">🔗 Sincronizar dispositivos</button>
     </div>
   </div>
 
@@ -502,6 +520,56 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
     <div class="ma" id="mActs">
       <button class="btn bg2" onclick="cM()">Cancelar</button>
       <button class="btn bp" id="mSvBtn" onclick="svM()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- SYNC MODAL -->
+<div class="sync-ov" id="syncOv" onclick="closeSyncOut(event)">
+  <div class="sync-box">
+    <h3>🔗 Sincronizar dispositivos</h3>
+    <p class="sync-desc">Enviá tus datos de un dispositivo a otro sin servidores ni cuentas. Todo viaja en un link que solo vos tenés.</p>
+
+    <!-- EXPORTAR -->
+    <div class="sync-step">
+      <div class="sync-step-title">
+        <span style="background:var(--bl);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;flex-shrink:0;">1</span>
+        En este dispositivo → generá el link con tus datos
+      </div>
+      <button class="btn bp" style="width:100%;justify-content:center;margin-bottom:10px;" onclick="genLink()">⚡ Generar link de datos</button>
+      <div class="sync-url-box" id="syncUrlBox" style="display:none;"></div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;" id="syncCopyRow" style="display:none;">
+        <button class="btn bs" style="flex:1;justify-content:center;" onclick="copyLink()">📋 Copiar link</button>
+        <button class="btn bg2" style="flex:1;justify-content:center;" onclick="shareLink()">📤 Compartir</button>
+      </div>
+      <div id="syncQR" class="qr-wrap" style="display:none;"></div>
+      <div class="sync-status" id="syncExportStatus"></div>
+    </div>
+
+    <!-- IMPORTAR -->
+    <div class="sync-step">
+      <div class="sync-step-title">
+        <span style="background:var(--gr);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;flex-shrink:0;">2</span>
+        En el otro dispositivo → pegá el link y cargá los datos
+      </div>
+      <p style="font-size:.7rem;color:var(--mu);margin-bottom:8px;">Pegá acá el link que generaste en el otro dispositivo:</p>
+      <textarea class="sync-import-area" id="syncImportInput" placeholder="Pegá el link aquí..."></textarea>
+      <button class="btn bd" style="width:100%;justify-content:center;margin-top:9px;" onclick="importLink()">📥 Cargar datos desde link</button>
+      <div class="sync-status" id="syncImportStatus"></div>
+    </div>
+
+    <!-- AUTO DETECT -->
+    <div class="sync-step" id="autoDetectBox" style="display:none;">
+      <div class="sync-step-title">🎉 ¡Datos detectados en la URL!</div>
+      <p style="font-size:.72rem;color:var(--mu);margin-bottom:10px;">Se detectaron datos de otro dispositivo en el link. ¿Querés cargarlos?</p>
+      <div style="display:flex;gap:7px;">
+        <button class="btn bs" style="flex:1;justify-content:center;" onclick="importFromURL()">✅ Sí, cargar datos</button>
+        <button class="btn bg2" style="flex:1;justify-content:center;" onclick="dismissURLData()">✕ Ignorar</button>
+      </div>
+    </div>
+
+    <div class="sync-acts">
+      <button class="btn bg2" onclick="closeSync()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -905,10 +973,201 @@ function exPDF(){window.print();toast('Abriendo impresión...');}
 function svD(){sv();toast('💾 Datos guardados');}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2500);}
 
+// ═══ SYNC VIA URL ═══
+const SYNC_KEY='fspy_sync';
+
+function openSync(){
+  document.getElementById('syncOv').classList.add('on');
+  document.getElementById('syncUrlBox').style.display='none';
+  document.getElementById('syncCopyRow').style.display='none';
+  document.getElementById('syncQR').style.display='none';
+  document.getElementById('syncExportStatus').style.display='none';
+  document.getElementById('syncImportStatus').style.display='none';
+  document.getElementById('syncImportInput').value='';
+}
+function closeSync(){document.getElementById('syncOv').classList.remove('on');}
+function closeSyncOut(e){if(e.target===document.getElementById('syncOv'))closeSync();}
+
+function genLink(){
+  try{
+    const payload=JSON.stringify(DB);
+    const b64=btoa(unescape(encodeURIComponent(payload)));
+    // Usamos la URL actual limpia (sin hash anterior)
+    const base=location.href.split('#')[0].split('?')[0];
+    const link=base+'?fspydata='+b64;
+
+    const box=document.getElementById('syncUrlBox');
+    box.textContent=link;
+    box.style.display='block';
+
+    document.getElementById('syncCopyRow').style.display='flex';
+
+    // QR con API pública
+    const qrDiv=document.getElementById('syncQR');
+    qrDiv.style.display='flex';
+    qrDiv.innerHTML=`<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(link)}" alt="QR" style="border-radius:8px;border:3px solid var(--s2);" onerror="this.parentElement.style.display='none'">`;
+
+    const st=document.getElementById('syncExportStatus');
+    st.className='sync-status ok';
+    st.textContent='✅ Link generado. Copialo o escaneá el QR en el otro dispositivo.';
+
+  }catch(e){
+    const st=document.getElementById('syncExportStatus');
+    st.className='sync-status err';
+    st.textContent='❌ Error al generar el link: '+e.message;
+  }
+}
+
+function copyLink(){
+  const text=document.getElementById('syncUrlBox').textContent;
+  if(!text){toast('Primero generá el link');return;}
+  navigator.clipboard.writeText(text).then(()=>{
+    toast('📋 ¡Link copiado al portapapeles!');
+    document.querySelector('#syncCopyRow .btn.bs').textContent='✅ Copiado';
+    setTimeout(()=>{document.querySelector('#syncCopyRow .btn.bs').textContent='📋 Copiar link';},2000);
+  }).catch(()=>{
+    // fallback para dispositivos sin clipboard API
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    toast('📋 ¡Link copiado!');
+  });
+}
+
+function shareLink(){
+  const text=document.getElementById('syncUrlBox').textContent;
+  if(!text){toast('Primero generá el link');return;}
+  if(navigator.share){
+    navigator.share({title:'FinanzasPY — Mis datos',text:'Mis datos financieros',url:text})
+      .then(()=>toast('✅ Compartido'))
+      .catch(()=>copyLink());
+  }else{
+    copyLink();
+  }
+}
+
+function importLink(){
+  const raw=document.getElementById('syncImportInput').value.trim();
+  if(!raw){
+    showImportStatus('err','⚠️ Pegá el link primero.');return;
+  }
+  parseAndImport(raw,'syncImportStatus');
+}
+
+function parseAndImport(raw,statusId){
+  try{
+    // Extraer el parámetro fspydata del link pegado
+    let b64='';
+    if(raw.includes('fspydata=')){
+      const url=new URL(raw.includes('://')?raw:'https://x.com/?'+raw.split('?')[1]);
+      b64=url.searchParams.get('fspydata')||'';
+    } else {
+      // Tal vez pegaron solo el base64 directo
+      b64=raw;
+    }
+    if(!b64)throw new Error('No se encontraron datos en el link.');
+
+    const json=decodeURIComponent(escape(atob(b64)));
+    const parsed=JSON.parse(json);
+
+    // Validación básica
+    if(!parsed.months)throw new Error('El link no contiene datos válidos de FinanzasPY.');
+
+    // Fusionar: conservar datos locales + traer del link
+    const merged=mergeDB(DB,parsed);
+    DB=merged;
+    sv();rAll();
+
+    const st=document.getElementById(statusId);
+    st.className='sync-status ok';
+    st.textContent='✅ ¡Datos cargados correctamente! Tus cambios ya están actualizados.';
+
+    // Limpiar URL sin recargar
+    window.history.replaceState({},'',location.pathname);
+
+    setTimeout(()=>closeSync(),1800);
+    toast('🎉 Datos sincronizados');
+
+  }catch(e){
+    const st=document.getElementById(statusId);
+    st.className='sync-status err';
+    st.textContent='❌ Link inválido. Asegurate de copiar el link completo. ('+e.message+')';
+  }
+}
+
+// Fusión inteligente: gana el dato con más entradas
+function mergeDB(local,remote){
+  const merged=JSON.parse(JSON.stringify(remote)); // base = remoto (más reciente)
+  // Fusionar meses: unir incomes y expenses sin duplicar por id
+  Object.keys(local.months||{}).forEach(month=>{
+    if(!merged.months[month]){merged.months[month]=local.months[month];return;}
+    // incomes
+    const remIds=new Set((merged.months[month].incomes||[]).map(x=>x.id));
+    (local.months[month].incomes||[]).forEach(x=>{if(!remIds.has(x.id))merged.months[month].incomes.push(x);});
+    // expenses
+    const remEIds=new Set((merged.months[month].expenses||[]).map(x=>x.id));
+    (local.months[month].expenses||[]).forEach(x=>{if(!remEIds.has(x.id))merged.months[month].expenses.push(x);});
+    // manualInc: tomar el mayor
+    merged.months[month].mI=Math.max(Number(merged.months[month].mI||0),Number(local.months[month].mI||0));
+  });
+  // Metas: unir sin duplicar por nombre
+  const remGoalNames=new Set((merged.goals||[]).map(g=>g.name));
+  (local.goals||[]).forEach(g=>{if(!remGoalNames.has(g.name))merged.goals.push(g);});
+  // Vencimientos: unir sin duplicar por nombre+fecha
+  const remVKeys=new Set((merged.vencimientos||[]).map(v=>v.nombre+'|'+v.fecha));
+  (local.vencimientos||[]).forEach(v=>{if(!remVKeys.has(v.nombre+'|'+v.fecha))merged.vencimientos.push(v);});
+  return merged;
+}
+
+// ─── Auto-detect datos en URL al cargar ───
+function checkURLData(){
+  try{
+    const params=new URLSearchParams(location.search);
+    const b64=params.get('fspydata');
+    if(!b64)return;
+    // Mostrar banner de auto-detección en el modal de sync
+    document.getElementById('autoDetectBox').style.display='block';
+    // Guardar para importar si el usuario acepta
+    window._urlB64=b64;
+    // Mostrar notificación flotante
+    showSyncBanner();
+  }catch(e){}
+}
+
+function showSyncBanner(){
+  const el=document.createElement('div');
+  el.id='syncBanner';
+  el.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--s1);border:1px solid var(--bl);border-radius:10px;padding:11px 16px;z-index:350;box-shadow:0 8px 28px rgba(0,0,0,.5);display:flex;gap:10px;align-items:center;max-width:340px;width:calc(100vw - 32px);animation:pi .35s cubic-bezier(.4,0,.2,1);';
+  el.innerHTML=`<span style="font-size:1.2rem;">🔗</span>
+    <div style="flex:1;">
+      <div style="font-family:var(--fh);font-size:.78rem;font-weight:700;margin-bottom:2px;">Datos de otro dispositivo detectados</div>
+      <div style="font-size:.68rem;color:var(--mu);">Tocá para cargarlos y sincronizar.</div>
+    </div>
+    <button class="btn bp" style="font-size:.68rem;padding:5px 10px;flex-shrink:0;" onclick="importFromURL();this.closest('#syncBanner').remove()">Cargar</button>
+    <button onclick="this.closest('#syncBanner').remove()" style="background:none;border:none;color:var(--mu);cursor:pointer;font-size:1rem;padding:0 0 0 4px;flex-shrink:0;">✕</button>`;
+  document.body.appendChild(el);
+  setTimeout(()=>{if(el.parentElement)el.remove();},12000);
+}
+
+function importFromURL(){
+  if(!window._urlB64){toast('No hay datos en la URL');return;}
+  parseAndImport(location.href,'syncImportStatus');
+  const ab=document.getElementById('autoDetectBox');if(ab)ab.style.display='none';
+  window._urlB64=null;
+}
+
+function dismissURLData(){
+  document.getElementById('autoDetectBox').style.display='none';
+  window._urlB64=null;
+  window.history.replaceState({},'',location.pathname);
+}
+
 // ═══ INIT ═══
 document.addEventListener('DOMContentLoaded',()=>{
   rMobM();
   rAll();
+  checkURLData();
   setTimeout(showPushes,1400);
 });
 </script>
