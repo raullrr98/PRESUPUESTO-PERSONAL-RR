@@ -479,9 +479,29 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
       <div class="fg"><label>Fecha objetivo</label><input type="date" id="gf_d"></div>
     </div>
 
-    <div class="ma">
+    <!-- PASO 2: ¿Agregar vencimiento? (aparece tras guardar gasto nuevo) -->
+    <div id="fVencPrompt" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--s2);border-radius:10px;margin-bottom:14px;border-left:3px solid var(--am);">
+        <span style="font-size:1.4rem;flex-shrink:0;">📅</span>
+        <div>
+          <div style="font-family:var(--fh);font-size:.84rem;font-weight:700;margin-bottom:2px;">¿Querés agregar el vencimiento?</div>
+          <div style="font-size:.71rem;color:var(--mu);line-height:1.4;">El gasto <strong id="vp_nombre_lbl"></strong> ya fue guardado. Solo completá la fecha de pago y listo — el resto ya está cargado.</div>
+        </div>
+      </div>
+      <!-- Resumen del gasto guardado -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <span class="b bc" id="vp_cat_lbl"></span>
+        <span style="font-family:var(--fh);font-size:.85rem;font-weight:700;color:var(--re);" id="vp_monto_lbl"></span>
+      </div>
+      <div class="fg"><label>📅 Fecha de vencimiento <span style="color:var(--re)">*</span></label><input type="date" id="vp_f"></div>
+      <div class="fg"><label>¿Se repite mensualmente?</label><select id="vp_r"><option value="no">No, es único</option><option value="si">Sí, cada mes (mismo día)</option></select></div>
+      <div class="fg"><label>Alertar con anticipación</label><select id="vp_a"><option value="1">1 día antes</option><option value="3" selected>3 días antes</option><option value="5">5 días antes</option><option value="7">7 días antes</option><option value="10">10 días antes</option></select></div>
+      <div class="fg"><label>Notas (opcional)</label><input type="text" id="vp_no" placeholder="Ej: Pagar antes de las 18hs"></div>
+    </div>
+
+    <div class="ma" id="mActs">
       <button class="btn bg2" onclick="cM()">Cancelar</button>
-      <button class="btn bp" onclick="svM()">Guardar</button>
+      <button class="btn bp" id="mSvBtn" onclick="svM()">Guardar</button>
     </div>
   </div>
 </div>
@@ -767,15 +787,116 @@ function openM(type){
   document.getElementById('mov').classList.add('on');
   setTimeout(()=>{const f=document.querySelector('#'+fm[type]+' input');if(f)f.focus();},250);
 }
-function cM(){document.getElementById('mov').classList.remove('on');ei=null;}
+function cM(){
+  document.getElementById('mov').classList.remove('on');
+  ei=null;
+  // reset paso 2
+  document.getElementById('fVencPrompt').style.display='none';
+  ['fInc','fExp','fVenc','fGoal'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('mSvBtn').textContent='Guardar';
+  document.getElementById('mSvBtn').onclick=svM;
+}
 function cMout(e){if(e.target===document.getElementById('mov'))cM();}
+
+// Variable para guardar el último gasto recién guardado (para el paso 2)
+let _lastExpense=null;
+
 function svM(){
   const d=md();
-  if(mT==='income'){const o={id:Date.now(),fecha:document.getElementById('if_f').value,desc:document.getElementById('if_d').value,cat:document.getElementById('if_c').value,monto:Number(document.getElementById('if_m').value)};if(!o.desc||!o.monto){alert('Completá todos los campos');return;}if(ei!==null)d.incomes[ei]=o;else d.incomes.push(o);}
-  if(mT==='expense'){const o={id:Date.now(),fecha:document.getElementById('ef_f').value,desc:document.getElementById('ef_d').value,cat:document.getElementById('ef_c').value,prio:document.getElementById('ef_p').value,monto:Number(document.getElementById('ef_m').value)};if(!o.desc||!o.monto){alert('Completá todos los campos');return;}if(ei!==null)d.expenses[ei]=o;else d.expenses.push(o);}
-  if(mT==='venc'){const o={nombre:document.getElementById('vf_n').value,cat:document.getElementById('vf_c').value,monto:Number(document.getElementById('vf_m').value),fecha:document.getElementById('vf_f').value,recur:document.getElementById('vf_r').value,alertDays:Number(document.getElementById('vf_a').value),notas:document.getElementById('vf_no').value};if(!o.nombre||!o.monto||!o.fecha){alert('Completá nombre, monto y fecha');return;}if(!DB.vencimientos)DB.vencimientos=[];if(ei!==null)DB.vencimientos[ei]=o;else DB.vencimientos.push(o);}
-  if(mT==='goal'){const o={name:document.getElementById('gf_n').value,icon:document.getElementById('gf_i').value,target:Number(document.getElementById('gf_t').value),current:Number(document.getElementById('gf_cu').value)||0,date:document.getElementById('gf_d').value};if(!o.name||!o.target){alert('Completá la meta y el monto');return;}if(ei!==null)DB.goals[ei]=o;else DB.goals.push(o);}
-  sv();cM();rAll();toast('¡Guardado correctamente!');
+
+  // ── PASO 2: guardar vencimiento desde prompt ──
+  if(mT==='expense_venc_prompt'){
+    const fecha=document.getElementById('vp_f').value;
+    if(!fecha){alert('Por favor seleccioná la fecha de vencimiento');document.getElementById('vp_f').focus();return;}
+    const obj={
+      nombre: _lastExpense.desc,
+      cat:    _lastExpense.cat,
+      monto:  _lastExpense.monto,
+      fecha,
+      recur:      document.getElementById('vp_r').value,
+      alertDays:  Number(document.getElementById('vp_a').value),
+      notas:      document.getElementById('vp_no').value
+    };
+    if(!DB.vencimientos)DB.vencimientos=[];
+    DB.vencimientos.push(obj);
+    sv();cM();rAll();
+    toast('✅ Gasto y vencimiento guardados');
+    // Navegar a vencimientos para que vea el resultado
+    const mnBtn=document.getElementById('mn-vencimientos');
+    if(window.innerWidth<=640&&mnBtn){mgo('vencimientos',mnBtn);}
+    else{go('vencimientos',document.querySelector('.dtabs .tab:nth-child(4)'));}
+    return;
+  }
+
+  // ── PASO 1 normal ──
+  if(mT==='income'){
+    const o={id:Date.now(),fecha:document.getElementById('if_f').value,desc:document.getElementById('if_d').value,cat:document.getElementById('if_c').value,monto:Number(document.getElementById('if_m').value)};
+    if(!o.desc||!o.monto){alert('Completá todos los campos');return;}
+    if(ei!==null)d.incomes[ei]=o;else d.incomes.push(o);
+    sv();cM();rAll();toast('¡Ingreso guardado!');return;
+  }
+
+  if(mT==='expense'){
+    const o={id:Date.now(),fecha:document.getElementById('ef_f').value,desc:document.getElementById('ef_d').value,cat:document.getElementById('ef_c').value,prio:document.getElementById('ef_p').value,monto:Number(document.getElementById('ef_m').value)};
+    if(!o.desc||!o.monto){alert('Completá todos los campos');return;}
+    if(ei!==null){
+      // Es edición — guardar y cerrar sin paso 2
+      d.expenses[ei]=o;
+      sv();cM();rAll();toast('¡Gasto actualizado!');
+    } else {
+      // Es nuevo — guardar gasto y mostrar paso 2
+      d.expenses.push(o);
+      sv();rAll();
+      _lastExpense=o;
+      showVencPrompt(o);
+    }
+    return;
+  }
+
+  if(mT==='venc'){
+    const o={nombre:document.getElementById('vf_n').value,cat:document.getElementById('vf_c').value,monto:Number(document.getElementById('vf_m').value),fecha:document.getElementById('vf_f').value,recur:document.getElementById('vf_r').value,alertDays:Number(document.getElementById('vf_a').value),notas:document.getElementById('vf_no').value};
+    if(!o.nombre||!o.monto||!o.fecha){alert('Completá nombre, monto y fecha');return;}
+    if(!DB.vencimientos)DB.vencimientos=[];
+    if(ei!==null)DB.vencimientos[ei]=o;else DB.vencimientos.push(o);
+    sv();cM();rAll();toast('¡Vencimiento guardado!');return;
+  }
+
+  if(mT==='goal'){
+    const o={name:document.getElementById('gf_n').value,icon:document.getElementById('gf_i').value,target:Number(document.getElementById('gf_t').value),current:Number(document.getElementById('gf_cu').value)||0,date:document.getElementById('gf_d').value};
+    if(!o.name||!o.target){alert('Completá la meta y el monto');return;}
+    if(ei!==null)DB.goals[ei]=o;else DB.goals.push(o);
+    sv();cM();rAll();toast('¡Meta guardada!');return;
+  }
+}
+
+function showVencPrompt(gasto){
+  // Ocultar formulario de gasto
+  ['fInc','fExp','fVenc','fGoal'].forEach(id=>document.getElementById(id).style.display='none');
+
+  // Precargar datos del gasto
+  document.getElementById('vp_nombre_lbl').textContent='"'+gasto.desc+'"';
+  document.getElementById('vp_cat_lbl').textContent=gasto.cat;
+  document.getElementById('vp_monto_lbl').textContent=fmt(gasto.monto);
+  document.getElementById('vp_f').value='';
+  document.getElementById('vp_r').value='si';
+  document.getElementById('vp_a').value='3';
+  document.getElementById('vp_no').value='';
+
+  // Mostrar paso 2
+  document.getElementById('fVencPrompt').style.display='block';
+  document.getElementById('mT').textContent='📅 ¿Agregar vencimiento?';
+  mT='expense_venc_prompt';
+
+  // Cambiar botones
+  document.getElementById('mSvBtn').textContent='✅ Guardar vencimiento';
+  document.getElementById('mSvBtn').onclick=svM;
+
+  // Cambiar "Cancelar" por "Saltar"
+  const cancelBtn=document.querySelector('#mActs .btn.bg2');
+  if(cancelBtn){cancelBtn.textContent='Saltar, no necesito';cancelBtn.onclick=()=>{cM();toast('✅ Gasto guardado sin vencimiento');};}
+
+  // Foco en fecha
+  setTimeout(()=>document.getElementById('vp_f').focus(),200);
 }
 
 // ═══ EXPORT ═══
