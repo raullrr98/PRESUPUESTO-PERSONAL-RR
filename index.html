@@ -346,7 +346,7 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
       <div class="kpi re"><span class="ki">💸</span><div class="kl">Egresos</div><div class="kv" id="kE">₲ 0</div><div class="ks">Gastos del mes</div></div>
       <div class="kpi gr"><span class="ki">💰</span><div class="kl">Balance</div><div class="kv" id="kB">₲ 0</div><div class="ks">Disponible</div></div>
       <div class="kpi am"><span class="ki">📊</span><div class="kl">% Gastado</div><div class="kv" id="kP">0%</div><div class="ks">Del total</div></div>
-      <div class="kpi pu"><span class="ki">🏦</span><div class="kl">Ahorro posible</div><div class="kv" id="kS">₲ 0</div><div class="ks">Rec. 20%</div></div>
+      <div class="kpi pu" id="kpiGoalCard"><span class="ki" id="kGoalIco">🎯</span><div class="kl" id="kGoalLbl">Sin meta activa</div><div class="kv" id="kS">—</div><div class="ks" id="kGoalSub">Agregá una meta</div></div>
     </div>
     <div class="card h-w">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -407,6 +407,29 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02
   <div class="page" id="p-vencimientos">
     <div class="st">Vencimientos</div>
     <div id="vStrip"></div>
+
+    <!-- RESUMEN PENDIENTES DEL MES -->
+    <div id="vPendBox" style="display:none;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div class="bi" style="border-left:3px solid var(--re);">
+          <div class="bii">💸</div>
+          <div class="bil">Por pagar este mes</div>
+          <div class="biv" id="vPendTotal" style="color:var(--re);">₲ 0</div>
+        </div>
+        <div class="bi" style="border-left:3px solid var(--gr);">
+          <div class="bii">✅</div>
+          <div class="bil">Ya pagado</div>
+          <div class="biv" id="vPendPaid" style="color:var(--gr);">₲ 0</div>
+        </div>
+        <div class="bi" style="border-left:3px solid var(--am);">
+          <div class="bii">⏳</div>
+          <div class="bil">Pendiente</div>
+          <div class="biv" id="vPendLeft" style="color:var(--am);">₲ 0</div>
+        </div>
+      </div>
+      <div id="vPendList" style="margin-top:10px;"></div>
+    </div>
+
     <div class="card">
       <div class="th"><span class="tt">📅 Mis vencimientos</span><button class="btn bp" onclick="openM('venc')">+ Agregar</button></div>
       <div class="fp">
@@ -654,7 +677,36 @@ function rKPIs(){
   document.getElementById('kE').textContent=fmt(e);
   document.getElementById('kB').textContent=fmt(b);
   document.getElementById('kP').textContent=p.toFixed(1)+'%';
-  document.getElementById('kS').textContent=fmt(s);
+
+  // ── KPI dinámico: meta activa o ahorro posible ──
+  const kv=document.getElementById('kS');
+  const kl=document.getElementById('kGoalLbl');
+  const ki=document.getElementById('kGoalIco');
+  const ks=document.getElementById('kGoalSub');
+  const kcard=document.getElementById('kpiGoalCard');
+  if(DB.goals&&DB.goals.length>0){
+    const g=DB.goals[0];
+    const pct=g.target>0?Math.min(g.current/g.target*100,100):0;
+    const falta=Math.max(g.target-g.current,0);
+    const mesesRestantes=b>0?Math.ceil(falta/b):null;
+    ki.textContent=g.icon||'🎯';
+    kl.textContent=g.name;
+    kv.textContent=fmt(g.current)+' / '+fmt(g.target);
+    kv.style.fontSize='.75rem';
+    ks.textContent=pct.toFixed(0)+'% logrado'+(mesesRestantes?' · ~'+mesesRestantes+' meses':'');
+    // barra de progreso mini dentro del KPI
+    let bar=kcard.querySelector('.kpi-mini-bar');
+    if(!bar){bar=document.createElement('div');bar.className='kpi-mini-bar';bar.style.cssText='height:4px;background:var(--s3);border-radius:99px;margin-top:6px;overflow:hidden;';const fill=document.createElement('div');fill.className='kpi-mini-fill';fill.style.cssText='height:100%;border-radius:99px;background:linear-gradient(90deg,var(--bl),var(--pu));transition:width .6s;';bar.appendChild(fill);kcard.appendChild(bar);}
+    kcard.querySelector('.kpi-mini-fill').style.width=pct+'%';
+  } else {
+    ki.textContent='🏦';
+    kl.textContent='Ahorro posible';
+    kv.textContent=fmt(s);
+    kv.style.fontSize='';
+    ks.textContent='Agregá metas para verlas acá';
+    const bar=kcard.querySelector('.kpi-mini-bar');if(bar)bar.remove();
+  }
+
   const h=Math.max(0,Math.min(100,100-p));
   const fi=document.getElementById('hFi'),st=document.getElementById('hSt');
   fi.style.width=h+'%';
@@ -709,26 +761,77 @@ function rVenc(){
   if(!g)return;
   if(!DB.vencimientos)DB.vencimientos=[];
   g.innerHTML='';
+
+  // ── RESUMEN PENDIENTES DEL MES ──
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth();
+  // Vencimientos que caen en el mes actual (o pasados aún no pagados)
+  const thisMon=(DB.vencimientos||[]).filter(v=>{
+    const d=new Date(v.fecha);
+    return d.getFullYear()===y&&d.getMonth()===m;
+  });
+  const pendBox=document.getElementById('vPendBox');
+  if(thisMon.length>0){
+    pendBox.style.display='block';
+    const totalMes=thisMon.reduce((s,v)=>s+Number(v.monto),0);
+    // "pagados" = los que ya vencieron (días < 0) se asume pagado si el usuario no los marcó
+    // "pendientes" = los que todavía no vencieron (days >= 0)
+    const pendientes=thisMon.filter(v=>gD(v.fecha)>=0);
+    const pasados=thisMon.filter(v=>gD(v.fecha)<0);
+    const totalPend=pendientes.reduce((s,v)=>s+Number(v.monto),0);
+    const totalPaid=pasados.reduce((s,v)=>s+Number(v.monto),0);
+    document.getElementById('vPendTotal').textContent=fmt(totalMes);
+    document.getElementById('vPendPaid').textContent=fmt(totalPaid);
+    document.getElementById('vPendLeft').textContent=fmt(totalPend);
+
+    // Lista de pendientes del mes ordenados por fecha
+    const listEl=document.getElementById('vPendList');
+    if(pendientes.length>0){
+      listEl.innerHTML=`<div style="font-family:var(--fh);font-size:.7rem;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;">Pendientes este mes</div>`+
+        pendientes.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha)).map(v=>{
+          const days=gD(v.fecha);
+          const s=stOf(days);
+          const ic={urgent:'🚨',warn:'⚠️',ok:'📅',past:'⏰'}[s];
+          const dlbl=days===0?'¡Hoy!':days===1?'Mañana':`en ${days}d`;
+          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--s2);border-radius:8px;margin-bottom:5px;border-left:3px solid ${s==='urgent'?'var(--re)':s==='warn'?'var(--am)':'var(--gr)'};">
+            <span style="display:flex;align-items:center;gap:7px;font-size:.78rem;">${ic} <strong>${v.nombre}</strong></span>
+            <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+              <span style="font-size:.68rem;color:var(--mu);">${fd(v.fecha)} · ${dlbl}</span>
+              <span style="font-family:var(--fh);font-size:.82rem;font-weight:700;color:var(--re);">${fmt(v.monto)}</span>
+            </span>
+          </div>`;
+        }).join('');
+    } else {
+      listEl.innerHTML=`<div style="padding:8px 10px;background:var(--grg);border-radius:8px;font-size:.76rem;color:#4ade80;border-left:3px solid var(--gr);">✅ ¡Todos los vencimientos del mes están al día!</div>`;
+    }
+  } else {
+    pendBox.style.display='none';
+  }
+
+  // ── GRID DE VENCIMIENTOS (filtrado) ──
   const items=DB.vencimientos.filter(v=>{const s=stOf(gD(v.fecha));return vF==='all'||s===vF;})
     .map(v=>({v,days:gD(v.fecha),oi:DB.vencimientos.indexOf(v)}))
     .sort((a,b)=>{if(a.days<0&&b.days>=0)return 1;if(b.days<0&&a.days>=0)return-1;return a.days-b.days;});
-  if(!items.length){em.style.display='block';g.style.display='none';return;}
-  em.style.display='none';g.style.display='grid';
-  items.forEach(({v,days,oi})=>{
-    const s=stOf(days);
-    const dl=days<0?`Venció hace ${Math.abs(days)}d`:days===0?'¡HOY!':days<=3?`${days}d`:`${days} días`;
-    const div=document.createElement('div');div.className=`vc ${s}`;
-    div.innerHTML=`<div class="vt"><span class="vn">${VI[s]} ${v.nombre}</span><span class="vd ${s}">${dl}</span></div>
-    <div class="vm-">📅 ${fd(v.fecha)} &nbsp;|&nbsp;<span class="b bc">${v.cat}</span>${v.recur==='si'?' 🔄':''}</div>
-    <div class="vmn">${fmt(v.monto)}</div>
-    ${v.notas?`<div class="vno">📝 ${v.notas}</div>`:''}
-    <div class="va">
-      ${(s==='past'||s==='urgent')?`<button class="btn bs" style="font-size:.66rem;padding:5px 9px;" onclick="mkPaid(${oi})">✅ Pagado</button>`:''}
-      <button class="ic ie" onclick="edV(${oi})">✏️</button>
-      <button class="ic id" onclick="dlV(${oi})">🗑️</button>
-    </div>`;
-    g.appendChild(div);
-  });
+  if(!items.length){em.style.display='block';g.style.display='none';}
+  else{
+    em.style.display='none';g.style.display='grid';
+    items.forEach(({v,days,oi})=>{
+      const s=stOf(days);
+      const dl=days<0?`Venció hace ${Math.abs(days)}d`:days===0?'¡HOY!':days<=3?`${days}d`:`${days} días`;
+      const div=document.createElement('div');div.className=`vc ${s}`;
+      div.innerHTML=`<div class="vt"><span class="vn">${VI[s]} ${v.nombre}</span><span class="vd ${s}">${dl}</span></div>
+      <div class="vm-">📅 ${fd(v.fecha)} &nbsp;|&nbsp;<span class="b bc">${v.cat||'—'}</span>${v.recur==='si'?' 🔄':''}</div>
+      <div class="vmn">${fmt(v.monto)}</div>
+      ${v.notas?`<div class="vno">📝 ${v.notas}</div>`:''}
+      <div class="va">
+        ${(s==='past'||s==='urgent')?`<button class="btn bs" style="font-size:.66rem;padding:5px 9px;" onclick="mkPaid(${oi})">✅ Pagado</button>`:''}
+        <button class="ic ie" onclick="edV(${oi})">✏️</button>
+        <button class="ic id" onclick="dlV(${oi})">🗑️</button>
+      </div>`;
+      g.appendChild(div);
+    });
+  }
+
   // Dot & strip
   const urg=(DB.vencimientos||[]).filter(v=>{const d=gD(v.fecha);return d>=0&&d<=3;});
   const dot=document.getElementById('vDot');if(dot)dot.classList.toggle('on',urg.length>0);
