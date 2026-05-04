@@ -760,65 +760,118 @@ function rVenc(){
   const g=document.getElementById('vGrid'),em=document.getElementById('vEm');
   if(!g)return;
   if(!DB.vencimientos)DB.vencimientos=[];
+  if(!DB.pagados)DB.pagados=[];
   g.innerHTML='';
 
   // ── RESUMEN PENDIENTES DEL MES ──
   const now=new Date();
-  const y=now.getFullYear(),m=now.getMonth();
-  // Vencimientos que caen en el mes actual (o pasados aún no pagados)
-  const thisMon=(DB.vencimientos||[]).filter(v=>{
-    const d=new Date(v.fecha);
-    return d.getFullYear()===y&&d.getMonth()===m;
-  });
-  const pendBox=document.getElementById('vPendBox');
-  if(thisMon.length>0){
-    pendBox.style.display='block';
-    const totalMes=thisMon.reduce((s,v)=>s+Number(v.monto),0);
-    // "pagados" = los que ya vencieron (días < 0) se asume pagado si el usuario no los marcó
-    // "pendientes" = los que todavía no vencieron (days >= 0)
-    const pendientes=thisMon.filter(v=>gD(v.fecha)>=0);
-    const pasados=thisMon.filter(v=>gD(v.fecha)<0);
-    const totalPend=pendientes.reduce((s,v)=>s+Number(v.monto),0);
-    const totalPaid=pasados.reduce((s,v)=>s+Number(v.monto),0);
-    document.getElementById('vPendTotal').textContent=fmt(totalMes);
-    document.getElementById('vPendPaid').textContent=fmt(totalPaid);
-    document.getElementById('vPendLeft').textContent=fmt(totalPend);
+  const y=now.getFullYear(),mo=now.getMonth();
 
-    // Lista de pendientes del mes ordenados por fecha
+  // Pagados ESTE mes (del historial real)
+  const pagadosMes=DB.pagados.filter(p=>{
+    const d=new Date(p.fechaPago);
+    return d.getFullYear()===y&&d.getMonth()===mo;
+  });
+  const totalPagado=pagadosMes.reduce((s,p)=>s+Number(p.monto),0);
+
+  // Pendientes este mes (vencimientos con fecha en este mes, aún no pagados)
+  const pendientesMes=DB.vencimientos.filter(v=>{
+    const d=new Date(v.fecha);
+    return d.getFullYear()===y&&d.getMonth()===mo;
+  });
+  const totalPendiente=pendientesMes.reduce((s,v)=>s+Number(v.monto),0);
+  const totalMes=totalPagado+totalPendiente;
+
+  const pendBox=document.getElementById('vPendBox');
+  if(totalMes>0||pagadosMes.length>0){
+    pendBox.style.display='block';
+    document.getElementById('vPendTotal').textContent=fmt(totalMes);
+    document.getElementById('vPendPaid').textContent=fmt(totalPagado);
+    document.getElementById('vPendLeft').textContent=fmt(totalPendiente);
+
     const listEl=document.getElementById('vPendList');
-    if(pendientes.length>0){
-      listEl.innerHTML=`<div style="font-family:var(--fh);font-size:.7rem;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;">Pendientes este mes</div>`+
-        pendientes.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha)).map(v=>{
-          const days=gD(v.fecha);
-          const s=stOf(days);
-          const ic={urgent:'🚨',warn:'⚠️',ok:'📅',past:'⏰'}[s];
-          const dlbl=days===0?'¡Hoy!':days===1?'Mañana':`en ${days}d`;
-          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--s2);border-radius:8px;margin-bottom:5px;border-left:3px solid ${s==='urgent'?'var(--re)':s==='warn'?'var(--am)':'var(--gr)'};">
-            <span style="display:flex;align-items:center;gap:7px;font-size:.78rem;">${ic} <strong>${v.nombre}</strong></span>
-            <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-              <span style="font-size:.68rem;color:var(--mu);">${fd(v.fecha)} · ${dlbl}</span>
-              <span style="font-family:var(--fh);font-size:.82rem;font-weight:700;color:var(--re);">${fmt(v.monto)}</span>
-            </span>
-          </div>`;
-        }).join('');
-    } else {
-      listEl.innerHTML=`<div style="padding:8px 10px;background:var(--grg);border-radius:8px;font-size:.76rem;color:#4ade80;border-left:3px solid var(--gr);">✅ ¡Todos los vencimientos del mes están al día!</div>`;
+    let html='';
+
+    // Pendientes del mes ordenados por fecha
+    if(pendientesMes.length>0){
+      html+=`<div style="font-family:var(--fh);font-size:.68rem;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin:10px 0 6px;">⏳ Por pagar este mes</div>`;
+      html+=pendientesMes.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha)).map(v=>{
+        const days=gD(v.fecha);const s=stOf(days);
+        const ic={urgent:'🚨',warn:'⚠️',ok:'📅',past:'⏰'}[s];
+        const dlbl=days<0?`Venció hace ${Math.abs(days)}d`:days===0?'¡Hoy!':days===1?'Mañana':`en ${days}d`;
+        const col=s==='urgent'?'var(--re)':s==='warn'?'var(--am)':s==='past'?'var(--mu)':'var(--gr)';
+        return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--s2);border-radius:8px;margin-bottom:5px;border-left:3px solid ${col};">
+          <span style="display:flex;align-items:center;gap:7px;font-size:.77rem;">${ic} <strong>${v.nombre}</strong></span>
+          <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+            <span style="font-size:.67rem;color:var(--mu);">${fd(v.fecha)} · ${dlbl}</span>
+            <span style="font-family:var(--fh);font-size:.8rem;font-weight:700;color:var(--re);">${fmt(v.monto)}</span>
+          </span>
+        </div>`;
+      }).join('');
     }
+
+    // Pagados este mes
+    if(pagadosMes.length>0){
+      html+=`<div style="font-family:var(--fh);font-size:.68rem;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 6px;">✅ Pagados este mes</div>`;
+      html+=pagadosMes.sort((a,b)=>new Date(b.fechaPago)-new Date(a.fechaPago)).map((p,pi)=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--s2);border-radius:8px;margin-bottom:5px;border-left:3px solid var(--gr);opacity:.85;">
+          <span style="display:flex;align-items:center;gap:7px;font-size:.77rem;">✅ <strong>${p.nombre}</strong></span>
+          <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+            <span style="font-size:.67rem;color:var(--mu);">Pagado ${fd(p.fechaPago)}</span>
+            <span style="font-family:var(--fh);font-size:.8rem;font-weight:700;color:var(--gr);">${fmt(p.monto)}</span>
+            <button onclick="delPagado(${pi})" style="background:none;border:none;color:var(--mu);cursor:pointer;font-size:.8rem;padding:0 2px;" title="Quitar">✕</button>
+          </span>
+        </div>`).join('');
+    }
+
+    if(!pendientesMes.length&&!pagadosMes.length){
+      html=`<div style="padding:8px 10px;background:var(--grg);border-radius:8px;font-size:.76rem;color:#4ade80;border-left:3px solid var(--gr);">✅ Sin vencimientos este mes.</div>`;
+    }
+    listEl.innerHTML=html;
   } else {
     pendBox.style.display='none';
   }
 
-  // ── GRID DE VENCIMIENTOS (filtrado) ──
-  const items=DB.vencimientos.filter(v=>{const s=stOf(gD(v.fecha));return vF==='all'||s===vF;})
-    .map(v=>({v,days:gD(v.fecha),oi:DB.vencimientos.indexOf(v)}))
-    .sort((a,b)=>{if(a.days<0&&b.days>=0)return 1;if(b.days<0&&a.days>=0)return-1;return a.days-b.days;});
-  if(!items.length){em.style.display='block';g.style.display='none';}
+  // ── GRID CON ORDEN: primero falta pagar, luego por vencer, último pagados (past) ──
+  const all=DB.vencimientos.map(v=>({v,days:gD(v.fecha),oi:DB.vencimientos.indexOf(v)}));
+
+  // Aplicar filtro de pills
+  const filtered=all.filter(({v})=>{
+    const s=stOf(gD(v.fecha));
+    return vF==='all'||s===vF;
+  });
+
+  // Orden: urgent → warn → ok → past
+  const order={urgent:0,warn:1,ok:2,past:3};
+  filtered.sort((a,b)=>{
+    const sa=stOf(a.days),sb=stOf(b.days);
+    if(order[sa]!==order[sb])return order[sa]-order[sb];
+    return a.days-b.days;
+  });
+
+  if(!filtered.length){em.style.display='block';g.style.display='none';}
   else{
     em.style.display='none';g.style.display='grid';
-    items.forEach(({v,days,oi})=>{
+
+    // Separadores por sección
+    let lastSection='';
+    const sectionLabel={urgent:'🔴 Por pagar — Urgente',warn:'⚠️ Próximos a vencer',ok:'📅 Al día',past:'⏰ Vencidos'};
+
+    filtered.forEach(({v,days,oi})=>{
       const s=stOf(days);
+
+      // Insertar separador de sección si cambia
+      if(s!==lastSection){
+        lastSection=s;
+        const sep=document.createElement('div');
+        sep.style.cssText='grid-column:1/-1;font-family:var(--fh);font-size:.65rem;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.1em;padding:4px 0 2px;border-bottom:1px solid var(--bd);margin-bottom:2px;';
+        sep.textContent=sectionLabel[s];
+        g.appendChild(sep);
+      }
+
       const dl=days<0?`Venció hace ${Math.abs(days)}d`:days===0?'¡HOY!':days<=3?`${days}d`:`${days} días`;
       const div=document.createElement('div');div.className=`vc ${s}`;
+      if(s==='past')div.style.opacity='.7';
       div.innerHTML=`<div class="vt"><span class="vn">${VI[s]} ${v.nombre}</span><span class="vd ${s}">${dl}</span></div>
       <div class="vm-">📅 ${fd(v.fecha)} &nbsp;|&nbsp;<span class="b bc">${v.cat||'—'}</span>${v.recur==='si'?' 🔄':''}</div>
       <div class="vmn">${fmt(v.monto)}</div>
@@ -832,13 +885,40 @@ function rVenc(){
     });
   }
 
-  // Dot & strip
-  const urg=(DB.vencimientos||[]).filter(v=>{const d=gD(v.fecha);return d>=0&&d<=3;});
+  // Dot & strip urgentes
+  const urg=DB.vencimientos.filter(v=>{const d=gD(v.fecha);return d>=0&&d<=3;});
   const dot=document.getElementById('vDot');if(dot)dot.classList.toggle('on',urg.length>0);
   const strip=document.getElementById('vStrip');
   if(strip)strip.innerHTML=urg.length?`<div class="al d on" style="margin-bottom:11px;">🚨 <strong>${urg.length} vencimiento${urg.length>1?'s':''} urgente${urg.length>1?'s':''}:</strong> ${urg.map(v=>`<em>${v.nombre}</em> (${fd(v.fecha)} — ${fmt(v.monto)})`).join(', ')}</div>`:'';
 }
-function mkPaid(i){const v=DB.vencimientos[i];if(v.recur==='si'){const d=new Date(v.fecha);d.setMonth(d.getMonth()+1);v.fecha=d.toISOString().split('T')[0];toast('✅ Pagado. Próximo: '+fd(v.fecha));}else{DB.vencimientos.splice(i,1);toast('✅ Marcado como pagado');}sv();rVenc();rNotif();}
+
+// Quitar un pago del historial
+function delPagado(i){
+  const mes=DB.pagados.filter(p=>{const d=new Date(p.fechaPago);const now=new Date();return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
+  const pago=mes[i];
+  const idx=DB.pagados.indexOf(pago);
+  if(idx>-1)DB.pagados.splice(idx,1);
+  sv();rVenc();toast('Pago quitado del historial');
+}
+function mkPaid(i){
+  const v=DB.vencimientos[i];
+  // Guardar en historial de pagados
+  if(!DB.pagados)DB.pagados=[];
+  DB.pagados.push({
+    nombre:v.nombre, cat:v.cat||'', monto:v.monto,
+    fechaVenc:v.fecha, fechaPago:new Date().toISOString().split('T')[0]
+  });
+  if(v.recur==='si'){
+    // Avanzar al próximo mes
+    const d=new Date(v.fecha);d.setMonth(d.getMonth()+1);
+    v.fecha=d.toISOString().split('T')[0];
+    toast('✅ Pagado. Próximo: '+fd(v.fecha));
+  } else {
+    DB.vencimientos.splice(i,1);
+    toast('✅ Marcado como pagado');
+  }
+  sv();rVenc();rNotif();
+}
 function dlV(i){DB.vencimientos.splice(i,1);sv();rVenc();rNotif();toast('Vencimiento eliminado');}
 function edV(i){const v=DB.vencimientos[i];ei=i;openM('venc');setTimeout(()=>{document.getElementById('vf_n').value=v.nombre;document.getElementById('vf_c').value=v.cat;document.getElementById('vf_m').value=v.monto;document.getElementById('vf_f').value=v.fecha;document.getElementById('vf_r').value=v.recur;document.getElementById('vf_a').value=v.alertDays;document.getElementById('vf_no').value=v.notas||'';document.getElementById('mT').textContent='Editar vencimiento';},50);}
 
@@ -1220,6 +1300,10 @@ function mergeDB(local,remote){
   // Vencimientos: unir sin duplicar por nombre+fecha
   const remVKeys=new Set((merged.vencimientos||[]).map(v=>v.nombre+'|'+v.fecha));
   (local.vencimientos||[]).forEach(v=>{if(!remVKeys.has(v.nombre+'|'+v.fecha))merged.vencimientos.push(v);});
+  // Pagados: unir sin duplicar por nombre+fechaPago
+  if(!merged.pagados)merged.pagados=[];
+  const remPKeys=new Set((merged.pagados||[]).map(p=>p.nombre+'|'+p.fechaPago));
+  (local.pagados||[]).forEach(p=>{if(!remPKeys.has(p.nombre+'|'+p.fechaPago))merged.pagados.push(p);});
   return merged;
 }
 
